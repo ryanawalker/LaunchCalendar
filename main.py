@@ -25,7 +25,7 @@ class Event(db.Model):
 
     def get_JSON(self):
         return {
-            'url': "https" + request.host_url.lstrip('http').rstrip('/') + url_for('dates_detail', key=self.id),
+            'url': "https" + request.host_url.lstrip('http').rstrip('/') + url_for('events_detail', key=self.id),
             "calendar": self.calendar,
             "name": self.name,
             "date": self.date
@@ -49,9 +49,9 @@ def date_repr(key):
 
 
 @app.route("/", methods=['GET', 'POST'])
-def dates_list():
+def events_list():
     """
-    List or create dates.
+    List or create events.
     """
     if request.method == 'POST':
         data_list = str(request.data.get('text', '')).split()
@@ -62,7 +62,7 @@ def dates_list():
             event = Event(calendar, name, date)
             db.session.add(event)
             db.session.commit()
-            return event.getJSON(), status.HTTP_201_CREATED
+            return event.get_JSON(), status.HTTP_201_CREATED
         else:
             return {"error": "calendar, date, and  name required"}, status.HTTP_400_BAD_REQUEST
 
@@ -72,27 +72,49 @@ def dates_list():
 
 
 @app.route("/<int:key>/", methods=['GET', 'PUT', 'DELETE'])
-def dates_detail(key):
+def events_detail(key):
     """
-    Retrieve, update or delete date instances.
+    Retrieve, update or delete events instances.
     """
+    event = Event.query.get(key)
+    
     if request.method == 'PUT':
-        date = str(request.data.get('name', ''))
-        dates[key] = date
+        
+        data_list = str(request.data.get('text', '')).split()
+        calendar = data_list[0]
+        name = data_list[1]
+        date = data_list[2]
+        if calendar != '' and name != '' and date != '':
+            event.calendar = calendar
+            event.name = name
+            event.date = datetime.date.fromisoformat(date)
+            db.session.add(event)
+            db.session.commit()
+            return event.get_JSON(), status.HTTP_201_CREATED
+        else:
+            return {"error": "calendar, date, and  name required"}, status.HTTP_400_BAD_REQUEST
+        
         return date_repr(key)
 
     elif request.method == 'DELETE':
-        dates.pop(key, None)
+        db.session.delete(event)
+        db.session.commit()
         return '', status.HTTP_204_NO_CONTENT
 
     # request.method == 'GET'
-    if key not in dates:
+    if not event:
         raise exceptions.NotFound()
-    return date_repr(key)
+    return event.get_JSON()
 
 @app.route("/week", methods=['GET'])
-def dates_weekly():
-    return [date_repr(idx) for idx in sorted(dates.keys()) if datetime.date.today() - dates[idx]["date"] < datetime.timedelta(7) and dates[idx]["date"] > datetime.date.today()]
+def events_weekly():
+    events = Event.query.filter(Event.date > datetime.date.today(), Event.date < datetime.date.today() + datetime.timedelta(7)).all()
+    return [event.get_JSON() for event in events]
+
+@app.route("/day", methods=['GET'])
+def events_daily():
+    events = Event.query.filter(Event.date == datetime.date.today()).all()
+    return [event.get_JSON() for event in events]
 
 if __name__ == "__main__":
     app.run(debug=True)
